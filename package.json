@@ -7,7 +7,7 @@
   "homepage": "https://bliplogs.co.uk",
   "repository": {
     "type": "git",
-    "url": "https://github.com/NoSweatWebsites/bliplogs-sdk.git"
+    "url": "git+https://github.com/NoSweatWebsites/bliplogs-sdk.git"
   },
   "bugs": {
     "url": "https://github.com/NoSweatWebsites/bliplogs-sdk/issues"

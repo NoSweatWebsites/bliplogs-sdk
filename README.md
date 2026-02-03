@@ -4,11 +4,11 @@
 [![npm bundle size](https://img.shields.io/bundlephobia/minzip/@bliplogs/sdk)](https://bundlephobia.com/package/@bliplogs/sdk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-Lightweight event tracking for browser and server. Zero dependencies, under 2KB gzipped.
+Lightweight event tracking for browser and server. Zero dependencies, ~3 KB gzipped.
 
 ## Why BlipLogs?
 
-- **Tiny** – Under 2KB gzipped, no dependencies
+- **Tiny** – ~3 KB gzipped, no dependencies
 - **Universal** – Works in browsers, Node 18+, Cloudflare Workers, edge runtimes
 - **Fast** – Uses `sendBeacon` for non-blocking delivery, falls back to `fetch`
 - **Simple** – Configure once, track anywhere
