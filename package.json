@@ -7,10 +7,10 @@
   "homepage": "https://bliplogs.co.uk",
   "repository": {
     "type": "git",
-    "url": "https://github.com/bliplogs/bliplogs-sdk.git"
+    "url": "https://github.com/NoSweatWebsites/bliplogs-sdk.git"
   },
   "bugs": {
-    "url": "https://github.com/bliplogs/bliplogs-sdk/issues"
+    "url": "https://github.com/NoSweatWebsites/bliplogs-sdk/issues"
   },
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",

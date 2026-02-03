@@ -349,7 +349,7 @@ The SDK automatically redacts sensitive URL parameters:
 
 - [Dashboard](https://bliplogs.co.uk) – Sign up and manage projects
 - [Documentation](https://bliplogs.co.uk/docs) – Full docs
-- [GitHub Issues](https://github.com/bliplogs/bliplogs/issues) – Bugs and feature requests
+- [GitHub Issues](https://github.com/NoSweatWebsites/bliplogs-sdk/issues) – Bugs and feature requests
 
 ## License
 
