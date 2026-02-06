@@ -11,6 +11,18 @@ export interface BlipContext {
   userAgent?: string;
 }
 
+export interface BlipTrafficSource {
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  utm_term?: string;
+  utm_content?: string;
+  /** Raw document.referrer captured at landing */
+  referrer?: string;
+  /** Parsed referrer source (e.g. 'google', 'bing', 'direct') */
+  referrer_source?: string;
+}
+
 export interface BlipPayload {
   event: string;
   level: BlipLevel;
@@ -22,6 +34,7 @@ export interface BlipPayload {
   api_key?: string; // Legacy / sendBeacon fallback only (query/body when headers unavailable)
   project_id?: string; // Project ID for browser SDK (origin validation)
   anonymize_ip?: boolean; // Request server to anonymize IP address
+  traffic_source?: BlipTrafficSource; // UTM params and referrer captured once per session
 }
 
 export interface BlipLogsError {
@@ -122,6 +135,8 @@ export interface BlipPrivacyConfig {
   collectUserAgent?: boolean;
   /** Enable session tracking (default: true) */
   collectSessionId?: boolean;
+  /** Capture UTM parameters and referrer source once per session (default: true) */
+  collectTrafficSource?: boolean;
 }
 
 export interface BlipLogsConfig {
@@ -217,6 +232,7 @@ export class BlipLogs {
       collectReferrer: config.privacy?.collectReferrer ?? true,
       collectUserAgent: config.privacy?.collectUserAgent ?? true,
       collectSessionId: config.privacy?.collectSessionId ?? true,
+      collectTrafficSource: config.privacy?.collectTrafficSource ?? true,
     };
 
     // Initialize bandwidth tracking config
@@ -355,6 +371,71 @@ export class BlipLogs {
     } catch (error) {
       // sessionStorage might be disabled or throw errors
       // Silently fail and return undefined (bot handling)
+      return undefined;
+    }
+  }
+
+  /**
+   * Known referrer hostname patterns mapped to source names
+   */
+  private static readonly REFERRER_SOURCES: Array<{ pattern: RegExp; source: string }> = [
+    { pattern: /google\./i, source: 'google' },
+    { pattern: /bing\.com/i, source: 'bing' },
+    { pattern: /yahoo\./i, source: 'yahoo' },
+    { pattern: /duckduckgo\.com/i, source: 'duckduckgo' },
+    { pattern: /facebook\.com|fb\.com/i, source: 'facebook' },
+    { pattern: /twitter\.com|x\.com|t\.co/i, source: 'twitter' },
+    { pattern: /linkedin\.com|lnkd\.in/i, source: 'linkedin' },
+    { pattern: /instagram\.com/i, source: 'instagram' },
+    { pattern: /youtube\.com|youtu\.be/i, source: 'youtube' },
+    { pattern: /reddit\.com/i, source: 'reddit' },
+    { pattern: /pinterest\./i, source: 'pinterest' },
+    { pattern: /tiktok\.com/i, source: 'tiktok' },
+  ];
+
+  /**
+   * Captures UTM parameters and referrer source once per session.
+   * Stores in sessionStorage so internal page navigations don't overwrite the landing data.
+   */
+  private captureTrafficSource(): BlipTrafficSource | undefined {
+    if (!this.privacy.collectTrafficSource) return undefined;
+    if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') return undefined;
+
+    const STORAGE_KEY = 'blip_traffic_source';
+
+    try {
+      const cached = sessionStorage.getItem(STORAGE_KEY);
+      if (cached) {
+        return JSON.parse(cached) as BlipTrafficSource;
+      }
+
+      const params = new URLSearchParams(window.location.search);
+      const referrer = document.referrer || '';
+
+      let referrerSource: string = 'direct';
+      if (referrer) {
+        try {
+          const hostname = new URL(referrer).hostname;
+          const match = BlipLogs.REFERRER_SOURCES.find(r => r.pattern.test(hostname));
+          referrerSource = match ? match.source : hostname;
+        } catch {
+          referrerSource = 'unknown';
+        }
+      }
+
+      const trafficSource: BlipTrafficSource = {
+        utm_source: params.get('utm_source') || undefined,
+        utm_medium: params.get('utm_medium') || undefined,
+        utm_campaign: params.get('utm_campaign') || undefined,
+        utm_term: params.get('utm_term') || undefined,
+        utm_content: params.get('utm_content') || undefined,
+        referrer: referrer || undefined,
+        referrer_source: referrerSource,
+      };
+
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(trafficSource));
+      return trafficSource;
+    } catch {
       return undefined;
     }
   }
@@ -573,6 +654,7 @@ export class BlipLogs {
       session_id: sessionId,
       timestamp_ms: now, // Numeric timestamp in milliseconds
       anonymize_ip: this.privacy.anonymizeIp || undefined, // Only include if true
+      traffic_source: this.captureTrafficSource(),
     };
 
     return this.send(payload);
