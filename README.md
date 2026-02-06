@@ -4,11 +4,11 @@
 [![npm bundle size](https://img.shields.io/bundlephobia/minzip/@bliplogs/sdk)](https://bundlephobia.com/package/@bliplogs/sdk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-Lightweight event tracking for browser and server. Zero dependencies, ~3 KB gzipped.
+Lightweight event tracking for browser and server. Zero dependencies, under 2KB gzipped.
 
 ## Why BlipLogs?
 
-- **Tiny** – ~3 KB gzipped, no dependencies
+- **Tiny** – Under 2KB gzipped, no dependencies
 - **Universal** – Works in browsers, Node 18+, Cloudflare Workers, edge runtimes
 - **Fast** – Uses `sendBeacon` for non-blocking delivery, falls back to `fetch`
 - **Simple** – Configure once, track anywhere
@@ -21,15 +21,33 @@ npm install @bliplogs/sdk
 
 ## Quick Start
 
+### Browser (No API Key Required)
+
+Configure allowed domains in your [BlipLogs dashboard](https://bliplogs.co.uk/dashboard) settings, then:
+
 ```typescript
 import BlipLogs from '@bliplogs/sdk';
 
 BlipLogs.configure({
-  apiKey: 'your-api-key',
-  projectId: 'your-project-id'
+  projectId: 'your-project-id'  // That's it - no API key needed!
 });
 
 BlipLogs.track('signup_clicked', { plan: 'pro' });
+```
+
+The browser's origin is automatically validated against your allowed domains.
+
+### Server (API Key Required)
+
+```typescript
+import BlipLogs from '@bliplogs/sdk';
+
+BlipLogs.configure({
+  apiKey: 'your-api-key',       // Required for server-side
+  projectId: 'your-project-id'
+});
+
+BlipLogs.track('order_created', { orderId: '123' });
 ```
 
 That's it. Three lines to start tracking.
@@ -72,7 +90,7 @@ function SignupButton() {
   return (
     <button onClick={() => BlipLogs.track('signup_clicked')}>
       Sign Up
-    
+
   );
 }
 ```
@@ -202,8 +220,8 @@ BlipLogs.track('api_request', {
 
 ```typescript
 BlipLogs.configure({
-  apiKey: 'your-api-key',       // Required
   projectId: 'your-project-id', // Required
+  apiKey: 'your-api-key',       // Required for server, optional in browser*
   debug: true,                  // Log errors to console
   onError: (error) => {         // Custom error handling
     console.error(error.type, error.message);
@@ -217,6 +235,8 @@ BlipLogs.configure({
   }
 });
 ```
+
+*\*Browser SDK without API key requires domain whitelisting in dashboard settings.*
 
 ## API Reference
 

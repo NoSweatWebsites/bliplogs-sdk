@@ -17,6 +17,7 @@ interface BlipPayload {
     session_id?: string;
     timestamp_ms?: number;
     api_key?: string;
+    project_id?: string;
     anonymize_ip?: boolean;
 }
 interface BlipLogsError {
@@ -24,6 +25,78 @@ interface BlipLogsError {
     message: string;
     statusCode?: number;
     originalError?: Error;
+}
+/**
+ * Resource type for bandwidth tracking
+ */
+type BandwidthResourceType = 'script' | 'link' | 'img' | 'fetch' | 'xmlhttprequest' | 'css' | 'font' | 'other';
+/**
+ * Bandwidth tracking configuration options
+ */
+interface BlipBandwidthConfig {
+    /** Enable bandwidth tracking (default: false) */
+    enabled?: boolean;
+    /** Batch interval in milliseconds (default: 30000 = 30 seconds) */
+    batchInterval?: number;
+    /** Resource types to track (default: all types) */
+    resourceTypes?: BandwidthResourceType[];
+    /** Maximum resources per batch (default: 100) */
+    maxBatchSize?: number;
+    /** Sanitize URLs to remove sensitive data (default: true) */
+    sanitizeUrls?: boolean;
+}
+/**
+ * Single resource timing entry for bandwidth tracking
+ */
+interface BandwidthResourceEntry {
+    /** Sanitized URL of the resource */
+    url: string;
+    /** Resource type (script, img, fetch, etc.) */
+    resourceType: string;
+    /** Bytes transferred over the network */
+    transferSize: number;
+    /** Encoded (compressed) body size */
+    encodedBodySize: number;
+    /** Decoded (uncompressed) body size */
+    decodedBodySize: number;
+    /** Total duration in milliseconds */
+    duration: number;
+    /** Start time relative to navigation start */
+    startTime: number;
+}
+/**
+ * Parsed user agent information for debugging
+ */
+interface ParsedUserAgent {
+    /** Browser name (Chrome, Firefox, Safari, Edge, etc.) */
+    browser: string;
+    /** Browser version */
+    browserVersion: string;
+    /** Operating system (Windows, macOS, Linux, iOS, Android) */
+    os: string;
+    /** Whether this appears to be a bot/crawler */
+    isBot: boolean;
+    /** Bot name if detected */
+    botName?: string;
+    /** Device type (desktop, mobile, tablet) */
+    deviceType: 'desktop' | 'mobile' | 'tablet' | 'unknown';
+    /** Raw user agent string */
+    raw: string;
+}
+/**
+ * Bandwidth batch payload sent to API
+ */
+interface BandwidthPayload {
+    resources: BandwidthResourceEntry[];
+    session_id?: string;
+    timestamp_ms: number;
+    api_key?: string;
+    project_id?: string;
+    context: BlipContext;
+    totalTransferSize: number;
+    resourceCount: number;
+    /** Parsed user agent information for debugging */
+    userAgent?: ParsedUserAgent;
 }
 /**
  * Privacy configuration options for GDPR compliance
@@ -41,7 +114,9 @@ interface BlipPrivacyConfig {
     collectSessionId?: boolean;
 }
 interface BlipLogsConfig {
-    apiKey: string;
+    /** API key for server-side authentication. Optional in browser when using domain whitelisting. */
+    apiKey?: string;
+    /** Project ID - required for both browser and server usage */
     projectId: string;
     /** Enable debug mode to log errors to console (default: false) */
     debug?: boolean;
@@ -49,6 +124,8 @@ interface BlipLogsConfig {
     onError?: (error: BlipLogsError) => void;
     /** Privacy settings for GDPR compliance */
     privacy?: BlipPrivacyConfig;
+    /** Enable bandwidth tracking to monitor resource loads across the site */
+    trackBandwidth?: boolean | BlipBandwidthConfig;
 }
 /**
  * BlipLogs SDK - Zero-dependency event logging client
@@ -72,6 +149,10 @@ declare class BlipLogs {
     private debug;
     private onError?;
     private privacy;
+    private bandwidthConfig;
+    private bandwidthBuffer;
+    private bandwidthObserver;
+    private bandwidthIntervalId;
     constructor(config: BlipLogsConfig);
     /**
      * Configure the global BlipLogs instance
@@ -142,6 +223,14 @@ declare class BlipLogs {
      */
     private sanitizeUrl;
     /**
+     * Known bot patterns for detection
+     */
+    private static readonly BOT_PATTERNS;
+    /**
+     * Parse user agent string into structured information
+     */
+    private parseUserAgent;
+    /**
      * Auto-captures browser context information with sensitive data sanitization
      * Respects privacy configuration settings
      */
@@ -180,6 +269,35 @@ declare class BlipLogs {
      * Fallback method using fetch API
      */
     private sendWithFetch;
+    /**
+     * Initialize bandwidth tracking with PerformanceObserver
+     */
+    private initBandwidthTracking;
+    /**
+     * Record a single resource timing entry
+     */
+    private recordResourceTiming;
+    /**
+     * Sanitize resource URL - removes sensitive params and query strings
+     */
+    private sanitizeResourceUrl;
+    /**
+     * Flush accumulated bandwidth data to API
+     */
+    private flushBandwidthBatch;
+    /**
+     * Send bandwidth data using sendBeacon with fetch fallback
+     */
+    private sendBandwidth;
+    /**
+     * Stop bandwidth tracking and cleanup resources
+     * Call this when unmounting or when you want to stop tracking
+     */
+    stopBandwidthTracking(): void;
+    /**
+     * Stop bandwidth tracking on the global instance
+     */
+    static stopBandwidthTracking(): void;
 }
 
-export { type BlipContext, type BlipLevel, BlipLogs, type BlipLogsConfig, type BlipLogsError, type BlipMetadata, type BlipPayload, type BlipPrivacyConfig, BlipLogs as default };
+export { type BandwidthPayload, type BandwidthResourceEntry, type BandwidthResourceType, type BlipBandwidthConfig, type BlipContext, type BlipLevel, BlipLogs, type BlipLogsConfig, type BlipLogsError, type BlipMetadata, type BlipPayload, type BlipPrivacyConfig, type ParsedUserAgent, BlipLogs as default };
