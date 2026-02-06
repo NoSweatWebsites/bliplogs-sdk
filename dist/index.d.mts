@@ -114,10 +114,22 @@ interface BlipPrivacyConfig {
     collectSessionId?: boolean;
 }
 interface BlipLogsConfig {
-    /** API key for server-side authentication. Optional in browser when using domain whitelisting. */
-    apiKey?: string;
     /** Project ID - required for both browser and server usage */
     projectId: string;
+    /**
+     * Public key (project identifier). Sent as X-Blip-Public-Key. Defaults to projectId.
+     * Safe for browser; used with domain whitelisting.
+     */
+    publicKey?: string;
+    /**
+     * Secret key for server-side authentication. Sent as X-Blip-Secret-Key only on server.
+     * Never sent in browser; nullified when isBrowser is true.
+     */
+    secretKey?: string;
+    /**
+     * @deprecated Use publicKey + secretKey. apiKey is treated as secretKey (server-only).
+     */
+    apiKey?: string;
     /** Enable debug mode to log errors to console (default: false) */
     debug?: boolean;
     /** Callback fired when an error occurs during event tracking */
@@ -144,11 +156,15 @@ interface BlipLogsConfig {
 declare class BlipLogs {
     private static globalInstance;
     private static readonly API_ENDPOINT;
-    private apiKey;
+    /** Public key (project identifier), always sent as X-Blip-Public-Key */
+    private publicKey;
+    /** Secret key: only set on server; null in browser to prevent leaks */
+    private secretKey;
     private projectId;
     private debug;
     private onError?;
     private privacy;
+    private isBrowser;
     private bandwidthConfig;
     private bandwidthBuffer;
     private bandwidthObserver;
@@ -257,8 +273,13 @@ declare class BlipLogs {
      */
     error(event: string, metadata?: BlipMetadata): boolean;
     /**
-     * Sends the payload using sendBeacon for speed and reliability
-     * Falls back to fetch if sendBeacon is unavailable or blocked
+     * Build headers for ingest: X-Blip-Public-Key always; X-Blip-Secret-Key only on server when present.
+     */
+    private getAuthHeaders;
+    /**
+     * Sends the payload using fetch with keepalive (supports custom headers).
+     * Falls back to sendBeacon only when fetch is unavailable; in that case custom headers
+     * cannot be sent, so we pass public key via query and warn.
      */
     private send;
     /**
@@ -266,7 +287,8 @@ declare class BlipLogs {
      */
     private handleError;
     /**
-     * Fallback method using fetch API
+     * Send via fetch with keepalive (supports X-Blip-Public-Key and X-Blip-Secret-Key).
+     * Errors are handled via onError/debug only; never throw (error silence guardrail).
      */
     private sendWithFetch;
     /**
@@ -286,7 +308,7 @@ declare class BlipLogs {
      */
     private flushBandwidthBatch;
     /**
-     * Send bandwidth data using sendBeacon with fetch fallback
+     * Send bandwidth data: fetch with keepalive primary (headers supported), sendBeacon fallback.
      */
     private sendBandwidth;
     /**

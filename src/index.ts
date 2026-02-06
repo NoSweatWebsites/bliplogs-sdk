@@ -199,13 +199,17 @@ export class BlipLogs {
     const rawSecret = config.secretKey ?? config.apiKey;
     this.secretKey = isBrowser ? undefined : (rawSecret ?? undefined);
 
-    // Server-side requires secret key for API key auth (or use domain whitelist in browser)
-    if (!isBrowser && !rawSecret) {
-      throw new Error('BlipLogs: secretKey (or apiKey) is required for server-side usage');
-    }
-
     this.projectId = config.projectId;
     this.debug = config.debug ?? false;
+
+    // Warn (don't throw) when no secret key on server — this happens legitimately
+    // during SSR pre-render of 'use client' components in Next.js/frameworks.
+    if (!isBrowser && !rawSecret && this.debug) {
+      console.warn(
+        'BlipLogs: No secretKey provided on server. Events will be sent without server auth. ' +
+        'This is expected during SSR pre-render; for dedicated server-side tracking, provide a secretKey.'
+      );
+    }
     this.onError = config.onError;
     this.privacy = {
       anonymizeIp: config.privacy?.anonymizeIp ?? false,
@@ -792,7 +796,7 @@ export class BlipLogs {
 
     // Filter by resource types if configured
     if (this.bandwidthConfig.resourceTypes.length > 0 &&
-        !this.bandwidthConfig.resourceTypes.includes(initiatorType as BandwidthResourceType)) {
+      !this.bandwidthConfig.resourceTypes.includes(initiatorType as BandwidthResourceType)) {
       return;
     }
 

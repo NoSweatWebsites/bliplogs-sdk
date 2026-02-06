@@ -1,6 +1,6 @@
 {
   "name": "@bliplogs/sdk",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Zero-dependency event logging SDK for BlipLogs. Track events from browser and server with minimal overhead.",
   "author": "BlipLogs <hello@bliplogs.co.uk>",
   "license": "MIT",
