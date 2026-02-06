@@ -5,6 +5,16 @@ All notable changes to the BlipLogs SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-02-06
+
+### Added
+
+- **Traffic source capture** – UTM parameters and referrer are captured once per session and attached to event payloads.
+  - New `BlipTrafficSource` type: `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content`, raw `referrer`, and parsed `referrer_source` (e.g. `google`, `bing`, `direct`).
+  - Stored in `sessionStorage` so in-app navigations do not overwrite landing attribution.
+  - Privacy option `privacy.collectTrafficSource` (default: `true`); set to `false` to disable.
+  - New exported type: `BlipTrafficSource`.
+
 ## [0.2.1] - 2026-02-06
 
 ### Fixed
