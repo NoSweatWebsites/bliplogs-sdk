@@ -19,7 +19,7 @@ export interface BlipPayload {
   timestamp: string; // ISO string for backward compatibility
   session_id?: string; // Session ID from client
   timestamp_ms?: number; // Numeric timestamp in milliseconds
-  api_key?: string; // API key included in body for sendBeacon (avoids URL exposure)
+  api_key?: string; // Legacy / sendBeacon fallback only (query/body when headers unavailable)
   project_id?: string; // Project ID for browser SDK (origin validation)
   anonymize_ip?: boolean; // Request server to anonymize IP address
 }
@@ -125,10 +125,22 @@ export interface BlipPrivacyConfig {
 }
 
 export interface BlipLogsConfig {
-  /** API key for server-side authentication. Optional in browser when using domain whitelisting. */
-  apiKey?: string;
   /** Project ID - required for both browser and server usage */
   projectId: string;
+  /**
+   * Public key (project identifier). Sent as X-Blip-Public-Key. Defaults to projectId.
+   * Safe for browser; used with domain whitelisting.
+   */
+  publicKey?: string;
+  /**
+   * Secret key for server-side authentication. Sent as X-Blip-Secret-Key only on server.
+   * Never sent in browser; nullified when isBrowser is true.
+   */
+  secretKey?: string;
+  /**
+   * @deprecated Use publicKey + secretKey. apiKey is treated as secretKey (server-only).
+   */
+  apiKey?: string;
   /** Enable debug mode to log errors to console (default: false) */
   debug?: boolean;
   /** Callback fired when an error occurs during event tracking */
@@ -147,7 +159,7 @@ export interface BlipLogsConfig {
  * // Global configuration (recommended for Astro/React apps)
  * BlipLogs.configure({ apiKey: 'your-api-key', projectId: 'your-project-id' });
  * BlipLogs.track('button_clicked', { buttonId: 'signup' });
- *
+ * 
  * // Or use instance-based API
  * const blip = new BlipLogs({ apiKey: 'your-api-key', projectId: 'your-project-id' });
  * blip.track('error_occurred', { message: 'Failed to load' }, 'error');
@@ -157,11 +169,15 @@ export class BlipLogs {
   private static globalInstance: BlipLogs | null = null;
   private static readonly API_ENDPOINT = 'https://api.bliplogs.co.uk';
 
-  private apiKey: string | undefined;
+  /** Public key (project identifier), always sent as X-Blip-Public-Key */
+  private publicKey: string;
+  /** Secret key: only set on server; null in browser to prevent leaks */
+  private secretKey: string | undefined;
   private projectId: string;
   private debug: boolean;
   private onError?: (error: BlipLogsError) => void;
   private privacy: Required<BlipPrivacyConfig>;
+  private isBrowser: boolean;
 
   // Bandwidth tracking
   private bandwidthConfig: Required<BlipBandwidthConfig>;
@@ -174,13 +190,20 @@ export class BlipLogs {
       throw new Error('BlipLogs: projectId is required');
     }
 
-    // API key is required on server, optional in browser (uses origin validation)
     const isBrowser = typeof window !== 'undefined';
-    if (!isBrowser && !config.apiKey) {
-      throw new Error('BlipLogs: apiKey is required for server-side usage');
+    this.isBrowser = isBrowser;
+
+    // Public key: required; defaults to projectId
+    this.publicKey = config.publicKey ?? config.projectId;
+    // Secret key: server-only; null in browser so it never leaks
+    const rawSecret = config.secretKey ?? config.apiKey;
+    this.secretKey = isBrowser ? undefined : (rawSecret ?? undefined);
+
+    // Server-side requires secret key for API key auth (or use domain whitelist in browser)
+    if (!isBrowser && !rawSecret) {
+      throw new Error('BlipLogs: secretKey (or apiKey) is required for server-side usage');
     }
 
-    this.apiKey = config.apiKey;
     this.projectId = config.projectId;
     this.debug = config.debug ?? false;
     this.onError = config.onError;
@@ -221,7 +244,7 @@ export class BlipLogs {
   /**
    * Configure the global BlipLogs instance
    * Call this once at the start of your application (e.g., in your Astro layout)
-   *
+   * 
    * @example
    * ```ts
    * // In Astro layout or initialization script
@@ -248,7 +271,7 @@ export class BlipLogs {
 
   /**
    * Track an event using the global instance
-   *
+   * 
    * @example
    * ```ts
    * BlipLogs.track('button_clicked', { buttonId: 'signup' });
@@ -260,7 +283,7 @@ export class BlipLogs {
 
   /**
    * Track an info-level event using the global instance
-   *
+   * 
    * @example
    * ```ts
    * BlipLogs.info('page_viewed', { page: '/dashboard' });
@@ -272,7 +295,7 @@ export class BlipLogs {
 
   /**
    * Track a warn-level event using the global instance
-   *
+   * 
    * @example
    * ```ts
    * BlipLogs.warn('slow_request', { duration: 5000 });
@@ -284,7 +307,7 @@ export class BlipLogs {
 
   /**
    * Track an error-level event using the global instance
-   *
+   * 
    * @example
    * ```ts
    * BlipLogs.error('api_error', { message: 'Failed to fetch' });
@@ -573,41 +596,62 @@ export class BlipLogs {
   }
 
   /**
-   * Sends the payload using sendBeacon for speed and reliability
-   * Falls back to fetch if sendBeacon is unavailable or blocked
+   * Build headers for ingest: X-Blip-Public-Key always; X-Blip-Secret-Key only on server when present.
+   */
+  private getAuthHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'X-Blip-Public-Key': this.publicKey,
+    };
+    if (!this.isBrowser && this.secretKey) {
+      headers['X-Blip-Secret-Key'] = this.secretKey;
+    }
+    return headers;
+  }
+
+  /**
+   * Sends the payload using fetch with keepalive (supports custom headers).
+   * Falls back to sendBeacon only when fetch is unavailable; in that case custom headers
+   * cannot be sent, so we pass public key via query and warn.
    */
   private send(payload: BlipPayload): boolean {
-    // Include authentication in body
-    // Browser SDK: includes project_id (server validates Origin header)
-    // Server SDK: includes api_key (traditional auth)
-    const payloadWithAuth = {
+    const payloadWithContext = {
       ...payload,
       project_id: this.projectId,
-      ...(this.apiKey && { api_key: this.apiKey }),
     };
-    const body = JSON.stringify(payloadWithAuth);
+    const body = JSON.stringify(payloadWithContext);
 
-    // Use sendBeacon as primary method (faster and more reliable for fire-and-forget)
+    // Prefer fetch with keepalive (modern replacement for sendBeacon that supports headers)
+    if (typeof fetch !== 'undefined') {
+      return this.sendWithFetch(body, BlipLogs.API_ENDPOINT);
+    }
+
+    // Fallback: sendBeacon when fetch is unavailable (rare). No custom headers possible.
     if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
       try {
+        const url = new URL(BlipLogs.API_ENDPOINT);
+        url.searchParams.set('publicKey', this.publicKey);
         const blob = new Blob([body], { type: 'application/json' });
-        // API key is now in the body, not the URL - prevents exposure in logs/history
-        const sent = navigator.sendBeacon(BlipLogs.API_ENDPOINT, blob);
-
-        // If sendBeacon returns false (blocked by client), fall back to fetch
-        if (!sent) {
-          return this.sendWithFetch(body);
+        const sent = navigator.sendBeacon(url.toString(), blob);
+        if (sent && this.debug) {
+          console.warn(
+            'BlipLogs: Using sendBeacon fallback; custom headers (e.g. API key) are not sent. ' +
+            'Public key was passed via query. Ensure domain whitelisting is configured for browser usage.'
+          );
         }
-
-        return true;
-      } catch (error) {
-        // If sendBeacon throws an error, fall back to fetch
-        return this.sendWithFetch(body);
+        return sent;
+      } catch {
+        // Silently fail; do not throw - error silence guardrail
+        this.handleError({ type: 'network', message: 'sendBeacon failed' });
+        return false;
       }
     }
 
-    // Fallback to fetch for non-browser environments or when sendBeacon is unavailable
-    return this.sendWithFetch(body);
+    this.handleError({
+      type: 'unknown',
+      message: 'No suitable transport available (fetch and sendBeacon unavailable)',
+    });
+    return false;
   }
 
   /**
@@ -630,18 +674,14 @@ export class BlipLogs {
   }
 
   /**
-   * Fallback method using fetch API
+   * Send via fetch with keepalive (supports X-Blip-Public-Key and X-Blip-Secret-Key).
+   * Errors are handled via onError/debug only; never throw (error silence guardrail).
    */
-  private sendWithFetch(body: string): boolean {
-    if (typeof fetch !== 'undefined') {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (this.apiKey) {
-        headers['x-api-key'] = this.apiKey;
-      }
+  private sendWithFetch(body: string, url: string = BlipLogs.API_ENDPOINT): boolean {
+    try {
+      const headers = this.getAuthHeaders();
 
-      fetch(BlipLogs.API_ENDPOINT, {
+      fetch(url, {
         method: 'POST',
         headers,
         body,
@@ -659,6 +699,9 @@ export class BlipLogs {
             } else if (response.status === 401) {
               errorType = 'auth';
               message = 'Invalid API key';
+            } else if (response.status === 403) {
+              errorType = 'auth';
+              message = 'Origin not allowed for this project';
             } else if (response.status === 400) {
               errorType = 'validation';
               message = 'Invalid request payload';
@@ -679,13 +722,14 @@ export class BlipLogs {
           });
         });
       return true;
+    } catch (err) {
+      this.handleError({
+        type: 'network',
+        message: err instanceof Error ? err.message : 'Request failed',
+        originalError: err instanceof Error ? err : undefined,
+      });
+      return false;
     }
-
-    this.handleError({
-      type: 'unknown',
-      message: 'No suitable transport available (fetch not defined)',
-    });
-    return false;
   }
 
   // ============================================
@@ -813,7 +857,6 @@ export class BlipLogs {
       session_id: this.privacy.collectSessionId ? this.getSessionId() : undefined,
       timestamp_ms: Date.now(),
       project_id: this.projectId,
-      ...(this.apiKey && { api_key: this.apiKey }),
       context: this.getContext(),
       totalTransferSize,
       resourceCount: resources.length,
@@ -824,46 +867,32 @@ export class BlipLogs {
   }
 
   /**
-   * Send bandwidth data using sendBeacon with fetch fallback
+   * Send bandwidth data: fetch with keepalive primary (headers supported), sendBeacon fallback.
    */
   private sendBandwidth(payload: BandwidthPayload): boolean {
     const endpoint = `${BlipLogs.API_ENDPOINT}/bandwidth`;
     const body = JSON.stringify(payload);
 
-    // Use sendBeacon as primary method
-    if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
-      try {
-        const blob = new Blob([body], { type: 'application/json' });
-        const sent = navigator.sendBeacon(endpoint, blob);
-        if (sent) return true;
-      } catch {
-        // Fall through to fetch
-      }
+    if (typeof fetch !== 'undefined') {
+      return this.sendWithFetch(body, endpoint);
     }
 
-    // Fallback to fetch
-    if (typeof fetch !== 'undefined') {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (this.apiKey) {
-        headers['x-api-key'] = this.apiKey;
+    if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+      try {
+        const url = new URL(endpoint);
+        url.searchParams.set('publicKey', this.publicKey);
+        const blob = new Blob([body], { type: 'application/json' });
+        const sent = navigator.sendBeacon(url.toString(), blob);
+        if (sent && this.debug) {
+          console.warn(
+            'BlipLogs: Bandwidth sent via sendBeacon fallback; custom headers not sent. Public key in query.'
+          );
+        }
+        return sent;
+      } catch {
+        this.handleError({ type: 'network', message: 'Bandwidth sendBeacon failed' });
+        return false;
       }
-
-      fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body,
-        keepalive: true,
-        credentials: 'omit',
-      }).catch((err) => {
-        this.handleError({
-          type: 'network',
-          message: err?.message || 'Bandwidth tracking request failed',
-          originalError: err instanceof Error ? err : undefined,
-        });
-      });
-      return true;
     }
 
     return false;

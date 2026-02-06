@@ -10,7 +10,7 @@ Lightweight event tracking for browser and server. Zero dependencies, under 2KB 
 
 - **Tiny** – Under 2KB gzipped, no dependencies
 - **Universal** – Works in browsers, Node 18+, Cloudflare Workers, edge runtimes
-- **Fast** – Uses `sendBeacon` for non-blocking delivery, falls back to `fetch`
+- **Fast** – Uses `fetch` with `keepalive: true` for non-blocking delivery (supports secure headers); falls back to `sendBeacon` when fetch is unavailable
 - **Simple** – Configure once, track anywhere
 
 ## Installation
@@ -37,18 +37,21 @@ BlipLogs.track('signup_clicked', { plan: 'pro' });
 
 The browser's origin is automatically validated against your allowed domains.
 
-### Server (API Key Required)
+### Server (Secret Key Required)
 
 ```typescript
 import BlipLogs from '@bliplogs/sdk';
 
 BlipLogs.configure({
-  apiKey: 'your-api-key',       // Required for server-side
-  projectId: 'your-project-id'
+  projectId: 'your-project-id',
+  secretKey: 'your-secret-api-key',  // Required for server; never sent in browser
+  // publicKey defaults to projectId; override if you use a separate public id
 });
 
 BlipLogs.track('order_created', { orderId: '123' });
 ```
+
+You can still use `apiKey` (deprecated) as an alias for `secretKey`.
 
 That's it. Three lines to start tracking.
 
@@ -61,6 +64,8 @@ BlipLogs.error('api_error', { status: 500 });
 ```
 
 ## Framework Examples
+
+For detailed setup (client-only, server-only, or both) in **Next.js** and **Astro**, see **[FRAMEWORKS.md](./FRAMEWORKS.md)**.
 
 ### React / Next.js
 
@@ -90,7 +95,7 @@ function SignupButton() {
   return (
     <button onClick={() => BlipLogs.track('signup_clicked')}>
       Sign Up
-
+    
   );
 }
 ```
@@ -314,10 +319,10 @@ import BlipLogs, {
 
 ## How It Works
 
-1. **Browser:** Uses `navigator.sendBeacon()` for fast, non-blocking delivery
-2. **Fallback:** Automatically uses `fetch()` with `keepalive: true` if sendBeacon is unavailable
-3. **Server:** Uses `fetch()` directly
-4. **Context:** Auto-captures URL, referrer, and user agent in browsers
+1. **Transport:** Uses `fetch()` with `keepalive: true` by default (allows `X-Blip-Public-Key` and `X-Blip-Secret-Key` headers for the seamless secure model). Falls back to `sendBeacon` only when fetch is unavailable (e.g. very old envs); in that case a console warning notes that keys are passed via query and domain whitelisting should be used in browser.
+2. **Browser:** Sends only `X-Blip-Public-Key` (project id); secret key is never sent in browser. The API validates the request using the `Origin`/`Referer` header against your project’s allowed domains.
+3. **Server:** Sends `X-Blip-Public-Key` and `X-Blip-Secret-Key`; the API verifies the secret key in D1 and allows the request (server trust).
+4. **Context:** Auto-captures URL, referrer, and user agent in browsers.
 
 ## Privacy
 

@@ -5,6 +5,19 @@ All notable changes to the BlipLogs SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-02-06
+
+### Changed
+
+- **Transport:** `fetch` with `keepalive: true` is now the primary transport (supports custom headers). `sendBeacon` is only used when `fetch` is unavailable; in that case a debug warning is logged and the public key is sent via query.
+- **Config:** New `publicKey` (defaults to `projectId`) and `secretKey` options. The SDK sends `X-Blip-Public-Key` always and `X-Blip-Secret-Key` only on the server. In the browser, `secretKey` is never sent to avoid leaks.
+- **Deprecated:** `apiKey` is deprecated in favor of `secretKey`; `apiKey` still works as an alias for server-side use.
+- **Build:** Production build now uses `--minify` for smaller bundle size.
+
+### Fixed
+
+- Network and request errors are handled via `onError`/debug only; no unhandled exceptions (error-silence guardrail).
+
 ## [0.1.2] - 2025-02-06
 
 ### Added
